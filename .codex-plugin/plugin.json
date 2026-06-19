@@ -1,0 +1,35 @@
+{
+  "name": "lumicodex-mcp-plugin",
+  "version": "0.1.0",
+  "description": "LumiCodex MCP tools and image uploader integration for Codex.",
+  "author": {
+    "name": "LumiCodex"
+  },
+  "license": "MIT",
+  "keywords": [
+    "lumicodex",
+    "mcp",
+    "photos",
+    "upload"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "LumiCodex MCP",
+    "shortDescription": "Manage LumiCodex albums and upload images from agents.",
+    "longDescription": "Connects Codex to the LumiCodex production MCP endpoint and packages guidance plus installer scripts for the LumiCodex image uploader.",
+    "developerName": "LumiCodex",
+    "category": "Productivity",
+    "capabilities": [
+      "MCP",
+      "Upload",
+      "Automation"
+    ],
+    "defaultPrompt": [
+      "Create a LumiCodex album and upload this folder.",
+      "List my LumiCodex albums.",
+      "Publish a LumiCodex album after upload."
+    ],
+    "brandColor": "#2563EB"
+  }
+}

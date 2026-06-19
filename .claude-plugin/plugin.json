@@ -1,0 +1,18 @@
+{
+  "name": "lumicodex-mcp-plugin",
+  "displayName": "LumiCodex MCP",
+  "version": "0.1.0",
+  "description": "LumiCodex MCP tools and image uploader integration for Claude Code.",
+  "author": {
+    "name": "LumiCodex"
+  },
+  "license": "MIT",
+  "keywords": [
+    "lumicodex",
+    "mcp",
+    "photos",
+    "upload"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
+}

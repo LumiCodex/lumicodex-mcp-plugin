@@ -1,0 +1,95 @@
+name: Release uploader
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  universal:
+    name: Universal .NET 10
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Publish universal asset
+        shell: bash --noprofile --norc {0}
+        run: |
+          mkdir -p dist/universal
+          dotnet publish src/LumiCodex.Upload/LumiCodex.Upload.csproj -c Release --self-contained false -p:UseAppHost=false -o dist/universal || exit 1
+          printf '%s\n' '#!/usr/bin/env sh' 'exec dotnet "$(dirname "$0")/lumicodex-upload.dll" "$@"' > dist/universal/lumicodex-upload
+          chmod +x dist/universal/lumicodex-upload
+          printf '%s\r\n' '@echo off' 'dotnet "%~dp0lumicodex-upload.dll" %*' > dist/universal/lumicodex-upload.cmd
+          tar -C dist/universal -czf dist/lumicodex-upload-dotnet10.tar.gz . || exit 1
+          (cd dist/universal && zip -qr ../lumicodex-upload-dotnet10.zip .) || exit 1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lumicodex-upload-dotnet10
+          path: dist/lumicodex-upload-dotnet10.*
+      - name: Attach assets to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${GITHUB_REF_NAME}" dist/lumicodex-upload-dotnet10.* --clobber
+
+  native:
+    name: Native AOT ${{ matrix.rid }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: linux-x64
+            os: ubuntu-24.04
+            archive: tar.gz
+          - rid: linux-arm64
+            os: ubuntu-24.04-arm
+            archive: tar.gz
+          - rid: osx-x64
+            os: macos-15-intel
+            archive: tar.gz
+          - rid: osx-arm64
+            os: macos-15
+            archive: tar.gz
+          - rid: win-x64
+            os: windows-2025
+            archive: zip
+          - rid: win-arm64
+            os: windows-11-arm
+            archive: zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Install Linux native build prerequisites
+        if: startsWith(matrix.rid, 'linux-')
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+      - name: Publish native asset
+        shell: bash --noprofile --norc {0}
+        run: dotnet publish src/LumiCodex.Upload/LumiCodex.Upload.csproj -c Release -r "${{ matrix.rid }}" --self-contained true -p:PublishAot=true -p:IlcGenerateStackTraceData=false
+      - name: Archive native asset
+        shell: bash --noprofile --norc {0}
+        run: |
+          output="src/LumiCodex.Upload/bin/Release/net10.0/${{ matrix.rid }}/publish"
+          mkdir -p dist
+          if [[ "${{ matrix.archive }}" == "zip" ]]; then
+            powershell -NoProfile -Command "Compress-Archive -Path '$output/*' -DestinationPath 'dist/lumicodex-upload-${{ matrix.rid }}.zip' -Force" || exit 1
+          else
+            tar -C "$output" -czf "dist/lumicodex-upload-${{ matrix.rid }}.tar.gz" . || exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lumicodex-upload-${{ matrix.rid }}
+          path: dist/lumicodex-upload-${{ matrix.rid }}.${{ matrix.archive }}
+      - name: Attach asset to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: gh release upload "${GITHUB_REF_NAME}" "dist/lumicodex-upload-${{ matrix.rid }}.${{ matrix.archive }}" --clobber

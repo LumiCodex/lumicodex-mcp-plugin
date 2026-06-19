@@ -1,0 +1,9 @@
+dist/work/
+dist/tmp/
+dist/*.tar.gz
+dist/*.zip
+src/**/bin/
+src/**/obj/
+*.tmp
+.env
+.env.*

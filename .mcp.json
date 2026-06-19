@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "lumicodex": {
+      "type": "http",
+      "url": "https://api.lumicodex.com/mcp",
+      "headers": {
+        "x-api-key": "${LUMICODEX_API_KEY}"
+      },
+      "headersHelper": "${CLAUDE_PLUGIN_ROOT}/scripts/lumicodex-mcp-headers.sh",
+      "timeout": 600000
+    }
+  }
+}
