@@ -1,15 +1,23 @@
 # LumiCodex MCP Plugin
 
 This plugin connects OpenAI Codex and Anthropic Claude Code to the LumiCodex
-production MCP endpoint:
+production MCP endpoints. Tools are split by domain so you can mount only what
+you need — one endpoint or several side by side:
 
 ```text
-https://api.lumicodex.com/mcp
+https://api.lumicodex.com/mcp/photos       # album / image management
+https://api.lumicodex.com/mcp/signatures   # e-signature envelopes
+https://api.lumicodex.com/mcp/documents    # document processing
 ```
 
+The bundled `.mcp.json` registers all three as independent servers
+(`lumicodex-photos`, `lumicodex-signatures`, `lumicodex-documents`). Remove any
+you do not need so agents only see the relevant tools.
+
 It also packages installer and release scripts for `lumicodex-upload`, the
-local image uploader used by agents when they need to upload files from your
-machine into a LumiCodex album.
+local uploader used by agents to move files between your machine and LumiCodex:
+images into an album, and documents into ephemeral storage for the signatures
+and documents tools (plus downloading processed results back to disk).
 
 The standalone uploader source is included under `src/LumiCodex.Upload` so this
 plugin repository can build release assets after it is published.
@@ -58,8 +66,8 @@ That validates the API key and stores it in the OS credential store.
 
 ## MCP Authentication
 
-The plugin `.mcp.json` uses the production HTTP MCP server with the `x-api-key`
-header.
+The plugin `.mcp.json` uses the production HTTP MCP servers with the `x-api-key`
+header. All scoped endpoints share the same API key.
 
 Claude Code can use `headersHelper` to read the API key from either
 `LUMICODEX_API_KEY` or the credential saved by `lumicodex-upload configure`.
@@ -77,7 +85,8 @@ From the parent folder:
 claude --plugin-dir ./lumicodex-mcp-plugin
 ```
 
-Inside Claude Code, run `/mcp` to confirm the `lumicodex` server is connected.
+Inside Claude Code, run `/mcp` to confirm the scoped servers you kept (for
+example `lumicodex-photos`) are connected.
 
 ## Upload Workflow
 
@@ -85,12 +94,26 @@ After the plugin and uploader are configured, ask the agent to create or find an
 album and upload a local folder. The packaged `lumicodex-album-upload` skill
 instructs the agent to:
 
-1. Use the LumiCodex MCP server to find or create the album.
+1. Use the LumiCodex photos MCP server (`lumicodex-photos`) to find or create the album.
 2. Capture the returned container id.
 3. Run `lumicodex-upload --container CONTAINER_ID --recursive --publish PHOTO_PATH`.
 
 The uploader supports `.jpg`, `.jpeg`, `.jfif`, `.png`, `.webp`, `.jxl`,
 `.tif`, `.tiff`, `.jp2`, `.avif`, and `.bmp`.
+
+## Document Workflow
+
+For the signatures and documents tools, the `lumicodex-document-transfer` skill
+moves document bytes with the uploader instead of base64 through the agent:
+
+1. `lumicodex-upload documents upload contract.pdf` → JSON `{ id, name }` per file.
+2. Use each `id` as `Source.documentId` for a documents tool, or fetch a URL via
+   `documents_get_download_url` for `envelopes_add_document`.
+3. Save a processed result with
+   `lumicodex-upload documents download --out ./result.pdf "PRESIGNED_URL"`.
+
+Document downloads use only the presigned URL and need no API key; uploads need
+an API key with `Process` permission.
 
 ## Build Release Assets
 

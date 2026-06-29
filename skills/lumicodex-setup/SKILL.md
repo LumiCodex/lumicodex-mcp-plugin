@@ -41,13 +41,13 @@ Use this workflow when the user asks to install, configure, repair, or verify th
    lumicodex-upload mcp-headers >/dev/null
    ```
 
-5. For Claude Code, ask the user to run `/mcp` after plugin load and confirm the `lumicodex` server is connected.
+5. For Claude Code, ask the user to run `/mcp` after plugin load and confirm the scoped LumiCodex servers they kept (e.g. `lumicodex-photos`, `lumicodex-signatures`, `lumicodex-documents`) are connected.
 
 6. For Codex-compatible clients, verify that `LUMICODEX_API_KEY` is available to the MCP environment if the client does not support `headersHelper`.
 
 ## Operating Rules
 
 - Never echo or log the API key.
-- Prefer `https://api.lumicodex.com/` for uploader configuration and `https://api.lumicodex.com/mcp` for MCP.
+- Prefer `https://api.lumicodex.com/` for uploader configuration. MCP is served per domain at `https://api.lumicodex.com/mcp/photos`, `/mcp/signatures`, and `/mcp/documents`; mount only the scopes the user needs.
 - If a native uploader release is unavailable for the user's platform, use the universal .NET 10 asset and tell the user that .NET 10 must be installed.
 - If Linux credential storage fails, tell the user to install libsecret's `secret-tool` or keep `LUMICODEX_API_KEY` in their shell environment.

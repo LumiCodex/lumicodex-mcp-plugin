@@ -24,7 +24,10 @@ internal sealed class LumiCodexApiClient : IDisposable
             BaseAddress = apiUrl,
             Timeout = TimeSpan.FromMinutes(2)
         };
-        apiClient.DefaultRequestHeaders.Add("x-api-key", apiKey);
+        if (!string.IsNullOrEmpty(apiKey))
+        {
+            apiClient.DefaultRequestHeaders.Add("x-api-key", apiKey);
+        }
 
         uploadClient = new HttpClient
         {
@@ -214,6 +217,195 @@ internal sealed class LumiCodexApiClient : IDisposable
             content: null,
             cancellationToken);
         await EnsureSuccessAsync(response, "publishing the container", cancellationToken);
+    }
+
+    internal async Task<DocumentUploadUrlsResponse> GenerateDocumentUploadUrlsAsync(
+        string accountId,
+        IReadOnlyList<string> fileNames,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"accounts/{Uri.EscapeDataString(accountId)}/documents/ephemeral/generate-upload-urls")
+        {
+            Content = JsonContent.Create(
+                new DocumentUploadUrlsRequest(fileNames),
+                UploadJsonContext.Default.DocumentUploadUrlsRequest)
+        };
+        using var response = await apiClient.SendAsync(
+            request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        await EnsureSuccessAsync(response, "creating document upload URLs", cancellationToken);
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        return await JsonSerializer.DeserializeAsync(
+            stream,
+            UploadJsonContext.Default.DocumentUploadUrlsResponse,
+            cancellationToken)
+            ?? throw new InvalidOperationException("The API returned no document upload URLs.");
+    }
+
+    // Downloads a presigned URL to a file in targetDirectory, returning the saved path. The name
+    // is taken from preferredName, then the response Content-Disposition, then the URL, then a
+    // content-type-based fallback. Retries transient failures like the upload path does.
+    internal async Task<string> DownloadDocumentAsync(
+        Uri url,
+        string targetDirectory,
+        string? preferredName,
+        CancellationToken cancellationToken)
+    {
+        string? reservedPath = preferredName is null
+            ? null
+            : ReserveUniquePath(targetDirectory, preferredName);
+
+        try
+        {
+            for (var attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    reservedPath = await DownloadOnceAsync(url, targetDirectory, reservedPath, cancellationToken);
+                    return reservedPath;
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception) when (attempt < MaxUploadAttempts && IsRetryable(exception))
+                {
+                    await Task.Delay(BackoffDelay(attempt), cancellationToken);
+                }
+                catch (OperationCanceledException exception)
+                {
+                    throw new TimeoutException(
+                        $"Download from '{url}' timed out after {MaxUploadAttempts} attempt(s).",
+                        exception);
+                }
+            }
+        }
+        catch
+        {
+            DeleteQuietly(reservedPath);
+            throw;
+        }
+    }
+
+    private async Task<string> DownloadOnceAsync(
+        Uri url,
+        string targetDirectory,
+        string? reservedPath,
+        CancellationToken cancellationToken)
+    {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(MinUploadAttemptTimeout);
+        var token = timeoutCts.Token;
+
+        using var response = await uploadClient.GetAsync(
+            url, HttpCompletionOption.ResponseHeadersRead, token);
+        if (!response.IsSuccessStatusCode)
+        {
+            var message = await DescribeFailureAsync(response, $"downloading from '{url}'", token);
+            throw IsTransientStatus((int)response.StatusCode)
+                ? new TransientUploadException(message)
+                : new PermanentUploadException(message);
+        }
+
+        var destinationPath = reservedPath
+            ?? ReserveUniquePath(targetDirectory, ResolveDownloadName(response, url));
+
+        await using var source = await response.Content.ReadAsStreamAsync(token);
+        await using (var destination = new FileStream(
+            destinationPath, FileMode.Create, FileAccess.Write, FileShare.None,
+            bufferSize: 128 * 1024, options: FileOptions.Asynchronous | FileOptions.SequentialScan))
+        {
+            await source.CopyToAsync(destination, token);
+        }
+
+        return destinationPath;
+    }
+
+    private static string ResolveDownloadName(HttpResponseMessage response, Uri url)
+    {
+        var disposition = response.Content.Headers.ContentDisposition;
+        var fromDisposition = disposition?.FileNameStar ?? disposition?.FileName;
+        if (!string.IsNullOrWhiteSpace(fromDisposition))
+        {
+            return SanitizeFileName(fromDisposition.Trim('"'));
+        }
+
+        var fromUrl = SanitizeFileName(Path.GetFileName(url.AbsolutePath));
+        if (Path.HasExtension(fromUrl))
+        {
+            return fromUrl;
+        }
+
+        var extension = ExtensionForContentType(response.Content.Headers.ContentType?.MediaType);
+        return $"{(string.IsNullOrWhiteSpace(fromUrl) ? "document" : fromUrl)}{extension}";
+    }
+
+    private static string ExtensionForContentType(string? mediaType) => mediaType switch
+    {
+        "application/pdf" => ".pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => ".docx",
+        "text/html" => ".html",
+        "text/plain" => ".txt",
+        "application/json" => ".json",
+        "image/png" => ".png",
+        "image/jpeg" => ".jpg",
+        _ => string.Empty
+    };
+
+    private static string SanitizeFileName(string fileName)
+    {
+        var name = Path.GetFileName(fileName.Replace('\\', '/').Trim());
+        foreach (var invalid in Path.GetInvalidFileNameChars())
+        {
+            name = name.Replace(invalid, '_');
+        }
+        return string.IsNullOrWhiteSpace(name) ? "document" : name;
+    }
+
+    private static readonly object PathReservationLock = new();
+
+    private static string ReserveUniquePath(string directory, string fileName)
+    {
+        Directory.CreateDirectory(directory);
+        var baseName = Path.GetFileNameWithoutExtension(fileName);
+        var extension = Path.GetExtension(fileName);
+
+        lock (PathReservationLock)
+        {
+            for (var index = 0; ; index++)
+            {
+                var candidate = Path.Combine(
+                    directory, index == 0 ? fileName : $"{baseName}-{index}{extension}");
+                try
+                {
+                    using var _ = new FileStream(candidate, FileMode.CreateNew);
+                    return candidate;
+                }
+                catch (IOException)
+                {
+                    // Name taken; try the next suffix.
+                }
+            }
+        }
+    }
+
+    private static void DeleteQuietly(string? path)
+    {
+        if (string.IsNullOrEmpty(path))
+        {
+            return;
+        }
+
+        try
+        {
+            File.Delete(path);
+        }
+        catch
+        {
+            // Best effort cleanup of a partial download.
+        }
     }
 
     private static string ContainerPath(

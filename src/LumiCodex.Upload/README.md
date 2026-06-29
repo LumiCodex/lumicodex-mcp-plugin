@@ -72,6 +72,36 @@ path order, and a file supplied more than once is uploaded only once.
 Large selections are prepared in batches of 500 images. Processing status is
 read from the authoritative ingest/item records before optional publication.
 
+## Documents
+
+The `documents` subcommands move files for the signatures and documents MCP
+tools without round-tripping bytes through the agent as base64.
+
+Upload local documents into ephemeral storage:
+
+```bash
+lumicodex-upload documents upload contract.pdf addendum.docx
+```
+
+Files of any type are accepted (folders are scanned at their top level, or
+recursively with `--recursive`). Each file is sent directly to a presigned URL.
+A JSON array of `{ id, name }` is printed to stdout; progress goes to stderr.
+Feed each `id` into a documents tool as `Source.documentId`, or call
+`documents_get_download_url` to obtain a URL for `envelopes_add_document`.
+
+Download processed results back to disk:
+
+```bash
+lumicodex-upload documents download --out ./merged.pdf "PRESIGNED_URL"
+```
+
+The URLs are the presigned download URLs returned by the documents/signatures
+tools (for example `GenerateUrlOutput.url` or `envelopes_get_downloads`).
+`--out` accepts a directory (the default is the current directory) or, for a
+single URL, an explicit file path. When no name is forced, it is taken from the
+response `Content-Disposition`, then the URL, then the content type. Downloads
+use only the presigned URL and need no API key.
+
 ## Publishing
 
 Portable framework-dependent output:

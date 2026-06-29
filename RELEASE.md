@@ -56,4 +56,5 @@ Then load the plugin in Claude Code:
 claude --plugin-dir .
 ```
 
-Run `/mcp` and confirm the `lumicodex` server is connected.
+Run `/mcp` and confirm the scoped LumiCodex servers you kept (e.g.
+`lumicodex-photos`) are connected.

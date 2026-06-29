@@ -1,8 +1,26 @@
 {
   "mcpServers": {
-    "lumicodex": {
+    "lumicodex-photos": {
       "type": "http",
-      "url": "https://api.lumicodex.com/mcp",
+      "url": "https://api.lumicodex.com/mcp/photos",
+      "headers": {
+        "x-api-key": "${LUMICODEX_API_KEY}"
+      },
+      "headersHelper": "${CLAUDE_PLUGIN_ROOT}/scripts/lumicodex-mcp-headers.sh",
+      "timeout": 600000
+    },
+    "lumicodex-signatures": {
+      "type": "http",
+      "url": "https://api.lumicodex.com/mcp/signatures",
+      "headers": {
+        "x-api-key": "${LUMICODEX_API_KEY}"
+      },
+      "headersHelper": "${CLAUDE_PLUGIN_ROOT}/scripts/lumicodex-mcp-headers.sh",
+      "timeout": 600000
+    },
+    "lumicodex-documents": {
+      "type": "http",
+      "url": "https://api.lumicodex.com/mcp/documents",
       "headers": {
         "x-api-key": "${LUMICODEX_API_KEY}"
       },

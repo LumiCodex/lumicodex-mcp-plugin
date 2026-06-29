@@ -7,6 +7,7 @@ internal static class UploaderApplication
 {
     private const int MaxImageUploadsPerRequest = 500;
     private const int MaxImageUploadStatusesPerRequest = 1000;
+    private const int MaxDocumentUploadsPerRequest = 100;
 
     private static readonly HashSet<string> SupportedImageExtensions = new(
         [
@@ -46,6 +47,19 @@ internal static class UploaderApplication
                     apiUrl,
                     credentialStore,
                     cancellationToken);
+            }
+            if (options.DocumentsUpload)
+            {
+                return await UploadDocumentsAsync(
+                    options,
+                    savedConfiguration,
+                    apiUrl,
+                    credentialStore,
+                    cancellationToken);
+            }
+            if (options.DocumentsDownload)
+            {
+                return await DownloadDocumentsAsync(options, cancellationToken);
             }
 
             return await UploadAsync(
@@ -159,6 +173,223 @@ internal static class UploaderApplication
         return 0;
     }
 
+    private static async Task<int> UploadDocumentsAsync(
+        CliOptions options,
+        UploadConfiguration savedConfiguration,
+        Uri apiUrl,
+        ICredentialStore credentialStore,
+        CancellationToken cancellationToken)
+    {
+        var accountId = ConfigurationStore.ResolveAccountId(options.AccountId, savedConfiguration);
+        if (string.IsNullOrWhiteSpace(accountId))
+        {
+            throw new CliUsageException(
+                "An account is required. Use --account, LUMICODEX_ACCOUNT_ID, or configure a default.");
+        }
+        if (options.Inputs.Count == 0)
+        {
+            throw new CliUsageException("At least one document file or folder is required.");
+        }
+
+        // Documents may be any type, so unlike images there is no extension allow-list.
+        var (files, _) = ResolveInputFiles(options.Inputs, options.Recursive, allowedExtensions: null);
+        if (files.Count == 0)
+        {
+            throw new CliUsageException("No files were found at the supplied paths.");
+        }
+
+        var apiKey = await ResolveApiKeyAsync(apiUrl, credentialStore, cancellationToken);
+        using var api = new LumiCodexApiClient(apiUrl, apiKey);
+
+        var work = new List<DocumentUploadWorkItem>(files.Count);
+        foreach (var batch in files.Chunk(MaxDocumentUploadsPerRequest))
+        {
+            var batchFiles = batch.ToList();
+            var response = await api.GenerateDocumentUploadUrlsAsync(
+                accountId,
+                batchFiles.Select(file => Path.GetFileName(file)
+                    ?? throw new CliUsageException($"File has no name: {file}")).ToList(),
+                cancellationToken);
+            work.AddRange(CorrelateDocuments(batchFiles, response.Ids));
+        }
+
+        Console.Error.WriteLine(
+            $"Created {work.Count} ephemeral document(s). Uploading with concurrency {options.Parallelism}.");
+        var failures = new System.Collections.Concurrent.ConcurrentBag<string>();
+        await Parallel.ForEachAsync(
+            work,
+            new ParallelOptions
+            {
+                MaxDegreeOfParallelism = options.Parallelism,
+                CancellationToken = cancellationToken
+            },
+            async (item, token) =>
+            {
+                try
+                {
+                    Console.Error.WriteLine($"Uploading {Path.GetFileName(item.FilePath)}");
+                    await api.UploadFileAsync(item.FilePath, item.UploadUrl, token);
+                    Console.Error.WriteLine($"Uploaded  {Path.GetFileName(item.FilePath)} -> {item.DocumentId}");
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    failures.Add($"{Path.GetFileName(item.FilePath)}: {exception.Message}");
+                    Console.Error.WriteLine(
+                        $"Upload failed {Path.GetFileName(item.FilePath)}: {exception.Message}");
+                }
+            });
+
+        if (!failures.IsEmpty)
+        {
+            Console.Error.WriteLine($"{failures.Count} document upload(s) failed.");
+            return 3;
+        }
+
+        var results = work
+            .Select(item => new DocumentUploadResult(item.DocumentId, Path.GetFileName(item.FilePath)))
+            .ToList();
+        Console.WriteLine(JsonSerializer.Serialize(results, UploadJsonContext.Default.ListDocumentUploadResult));
+        Console.Error.WriteLine($"Completed {results.Count} document(s).");
+        return 0;
+    }
+
+    private static async Task<int> DownloadDocumentsAsync(
+        CliOptions options,
+        CancellationToken cancellationToken)
+    {
+        if (options.Inputs.Count == 0)
+        {
+            throw new CliUsageException("At least one download URL is required.");
+        }
+
+        var urls = new List<Uri>(options.Inputs.Count);
+        foreach (var input in options.Inputs)
+        {
+            if (!Uri.TryCreate(input, UriKind.Absolute, out var uri) ||
+                (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            {
+                throw new CliUsageException($"Not an absolute http(s) download URL: {input}");
+            }
+            urls.Add(uri);
+        }
+
+        var (directory, forcedName) = ResolveDownloadTarget(options.OutputPath, urls.Count);
+
+        // The API key is not used for downloads: the URLs are already presigned. The base URL is
+        // irrelevant too, so any absolute Uri works to construct the client.
+        using var api = new LumiCodexApiClient(new Uri("https://api.lumicodex.com/"), apiKey: string.Empty);
+
+        var results = new System.Collections.Concurrent.ConcurrentBag<DocumentDownloadResult>();
+        var failures = new System.Collections.Concurrent.ConcurrentBag<string>();
+        await Parallel.ForEachAsync(
+            urls,
+            new ParallelOptions
+            {
+                MaxDegreeOfParallelism = options.Parallelism,
+                CancellationToken = cancellationToken
+            },
+            async (url, token) =>
+            {
+                try
+                {
+                    var savedPath = await api.DownloadDocumentAsync(url, directory, forcedName, token);
+                    results.Add(new DocumentDownloadResult(Path.GetFileName(savedPath), savedPath));
+                    Console.Error.WriteLine($"Downloaded {Path.GetFileName(savedPath)} -> {savedPath}");
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    failures.Add($"{url}: {exception.Message}");
+                    Console.Error.WriteLine($"Download failed {url}: {exception.Message}");
+                }
+            });
+
+        if (!failures.IsEmpty)
+        {
+            Console.Error.WriteLine($"{failures.Count} download(s) failed.");
+            return 3;
+        }
+
+        Console.WriteLine(JsonSerializer.Serialize(
+            results.ToList(), UploadJsonContext.Default.ListDocumentDownloadResult));
+        Console.Error.WriteLine($"Completed {results.Count} download(s).");
+        return 0;
+    }
+
+    private static (string Directory, string? ForcedName) ResolveDownloadTarget(
+        string? outputPath,
+        int urlCount)
+    {
+        if (string.IsNullOrWhiteSpace(outputPath))
+        {
+            return (Directory.GetCurrentDirectory(), null);
+        }
+
+        var fullPath = Path.GetFullPath(outputPath);
+        if (Directory.Exists(fullPath))
+        {
+            return (fullPath, null);
+        }
+
+        // A single URL plus a path that looks like a file name is treated as an explicit
+        // destination file; anything else is treated as a directory to create.
+        if (urlCount == 1 && Path.HasExtension(fullPath))
+        {
+            var directory = Path.GetDirectoryName(fullPath);
+            return (string.IsNullOrEmpty(directory) ? Directory.GetCurrentDirectory() : directory,
+                Path.GetFileName(fullPath));
+        }
+
+        return (fullPath, null);
+    }
+
+    private static async Task<string> ResolveApiKeyAsync(
+        Uri apiUrl,
+        ICredentialStore credentialStore,
+        CancellationToken cancellationToken)
+    {
+        var apiKey = Environment.GetEnvironmentVariable("LUMICODEX_API_KEY");
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            apiKey = await credentialStore.ReadAsync(apiUrl, cancellationToken);
+        }
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            throw new CliUsageException(
+                "No API key is available. Set LUMICODEX_API_KEY or run 'lumicodex-upload configure'.");
+        }
+
+        return apiKey.Trim();
+    }
+
+    private static List<DocumentUploadWorkItem> CorrelateDocuments(
+        IReadOnlyList<string> files,
+        IReadOnlyList<DocumentUploadPreparation>? descriptors)
+    {
+        if (descriptors is null || descriptors.Count != files.Count)
+        {
+            throw new InvalidOperationException(
+                $"The API returned {descriptors?.Count ?? 0} upload URL(s) for {files.Count} file(s).");
+        }
+
+        var work = new List<DocumentUploadWorkItem>(files.Count);
+        for (var i = 0; i < files.Count; i++)
+        {
+            var descriptor = descriptors[i];
+            if (string.IsNullOrWhiteSpace(descriptor.Id))
+            {
+                throw new InvalidOperationException($"The API did not return a document id for '{files[i]}'.");
+            }
+            if (!Uri.TryCreate(descriptor.Url, UriKind.Absolute, out var uploadUrl))
+            {
+                throw new InvalidOperationException($"The API did not return a valid upload URL for '{files[i]}'.");
+            }
+
+            work.Add(new DocumentUploadWorkItem(files[i], descriptor.Id, uploadUrl));
+        }
+
+        return work;
+    }
+
     private static async Task<int> UploadAsync(
         CliOptions options,
         UploadConfiguration savedConfiguration,
@@ -181,7 +412,7 @@ internal static class UploaderApplication
             throw new CliUsageException("At least one image file or folder is required.");
         }
 
-        var (files, skippedFiles) = ResolveInputFiles(options.Inputs, options.Recursive);
+        var (files, skippedFiles) = ResolveInputFiles(options.Inputs, options.Recursive, SupportedImageExtensions);
         if (skippedFiles.Count > 0)
         {
             PrintSkippedFiles(skippedFiles);
@@ -191,18 +422,8 @@ internal static class UploaderApplication
             throw new CliUsageException("No supported image files were found.");
         }
 
-        var apiKey = Environment.GetEnvironmentVariable("LUMICODEX_API_KEY");
-        if (string.IsNullOrWhiteSpace(apiKey))
-        {
-            apiKey = await credentialStore.ReadAsync(apiUrl, cancellationToken);
-        }
-        if (string.IsNullOrWhiteSpace(apiKey))
-        {
-            throw new CliUsageException(
-                "No API key is available. Set LUMICODEX_API_KEY or run 'lumicodex-upload configure'.");
-        }
-
-        using var api = new LumiCodexApiClient(apiUrl, apiKey.Trim());
+        var apiKey = await ResolveApiKeyAsync(apiUrl, credentialStore, cancellationToken);
+        using var api = new LumiCodexApiClient(apiUrl, apiKey);
         var work = new List<UploadWorkItem>(files.Count);
         foreach (var batch in files.Chunk(MaxImageUploadsPerRequest))
         {
@@ -293,7 +514,8 @@ internal static class UploaderApplication
 
     private static (List<string> Files, List<string> SkippedFiles) ResolveInputFiles(
         IReadOnlyList<string> inputs,
-        bool recursive)
+        bool recursive,
+        IReadOnlySet<string>? allowedExtensions)
     {
         var files = new List<string>();
         var skippedFiles = new List<string>();
@@ -304,7 +526,7 @@ internal static class UploaderApplication
             var path = Path.GetFullPath(input);
             if (File.Exists(path))
             {
-                AddFile(path, files, skippedFiles, seenFiles);
+                AddFile(path, files, skippedFiles, seenFiles, allowedExtensions);
                 continue;
             }
 
@@ -324,7 +546,7 @@ internal static class UploaderApplication
                 .EnumerateFiles(path, "*", enumerationOptions)
                 .OrderBy(file => file, GetPathComparer()))
             {
-                AddFile(Path.GetFullPath(file), files, skippedFiles, seenFiles);
+                AddFile(Path.GetFullPath(file), files, skippedFiles, seenFiles, allowedExtensions);
             }
         }
 
@@ -335,9 +557,10 @@ internal static class UploaderApplication
         string path,
         List<string> files,
         List<string> skippedFiles,
-        HashSet<string> seenFiles)
+        HashSet<string> seenFiles,
+        IReadOnlySet<string>? allowedExtensions)
     {
-        if (!SupportedImageExtensions.Contains(Path.GetExtension(path)))
+        if (allowedExtensions is not null && !allowedExtensions.Contains(Path.GetExtension(path)))
         {
             skippedFiles.Add(path);
             return;
@@ -495,10 +718,21 @@ internal static class UploaderApplication
     {
         Console.WriteLine(
             """
-            LumiCodex image uploader
+            LumiCodex uploader
 
-            Upload:
+            Upload images to an album:
               lumicodex-upload --container ID [options] INPUT [INPUT...]
+
+            Upload documents to ephemeral storage (for the signatures/documents MCP tools):
+              lumicodex-upload documents upload [options] FILE [FILE...]
+                Prints a JSON array of { id, name } to stdout. Feed each id into a
+                documents/signatures tool (e.g. Source.documentId, or fetch a URL with
+                documents_get_download_url for envelopes_add_document).
+
+            Download processed results back to disk:
+              lumicodex-upload documents download [--out PATH] [options] URL [URL...]
+                URLs are the presigned download URLs returned by the documents/signatures
+                tools (e.g. GenerateUrlOutput.url, envelopes_get_downloads).
 
             Configure:
               lumicodex-upload configure [--api-url URL] [--account ID]
@@ -507,25 +741,29 @@ internal static class UploaderApplication
               lumicodex-upload mcp-headers [--api-url URL]
 
             Inputs:
-              Each input may be an image file or a folder. Folders are scanned only
-              at their top level unless --recursive is specified.
+              For image upload and 'documents upload', each input may be a file or a folder.
+              Folders are scanned only at their top level unless --recursive is specified
+              (image upload keeps only supported image types; document upload takes any file).
 
             Options:
               --api-url URL          API URL. Defaults to LUMICODEX_API_URL,
                                      saved configuration, then https://api.lumicodex.com/
               --account ID           Account ID. Defaults to LUMICODEX_ACCOUNT_ID,
                                      then saved configuration.
-              --container ID         Album container ID.
-              --parallel N           Concurrent uploads, from 1 to 32. Default: 4.
-              --timeout-minutes N    Processing timeout. Default: 30.
+              --container ID         Album container ID (image upload only).
+              --out PATH             'documents download' destination. A directory, or a
+                                     file path when downloading a single URL. Default: cwd.
+              --parallel N           Concurrent transfers, from 1 to 32. Default: 4.
+              --timeout-minutes N    Image processing timeout. Default: 30.
               --no-wait              Return after upload without waiting for processing.
               --publish              Publish after every image processes successfully.
-              --recursive            Include images in nested input folders.
+              --recursive            Include files in nested input folders.
               -h, --help             Show this help.
 
             Authentication:
               LUMICODEX_API_KEY takes precedence over the operating-system credential
-              store populated by 'lumicodex-upload configure'.
+              store populated by 'lumicodex-upload configure'. Document downloads use the
+              presigned URL only and need no API key.
             """);
     }
 }
@@ -536,3 +774,8 @@ internal sealed record UploadWorkItem(
     Uri UploadUrl);
 
 internal sealed record UploadFailure(UploadWorkItem WorkItem, string Message);
+
+internal sealed record DocumentUploadWorkItem(
+    string FilePath,
+    string DocumentId,
+    Uri UploadUrl);

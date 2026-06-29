@@ -12,17 +12,44 @@ internal sealed record CliOptions(
     bool WaitForProcessing,
     bool Publish,
     bool Recursive,
+    bool DocumentsUpload,
+    bool DocumentsDownload,
+    string? OutputPath,
     IReadOnlyList<string> Inputs)
 {
     internal static CliOptions Parse(string[] args)
     {
-        var configure = args.FirstOrDefault()?.Equals("configure", StringComparison.OrdinalIgnoreCase) == true;
-        var emitMcpHeaders = args.FirstOrDefault()?.Equals("mcp-headers", StringComparison.OrdinalIgnoreCase) == true;
+        var first = args.FirstOrDefault();
+        var configure = string.Equals(first, "configure", StringComparison.OrdinalIgnoreCase);
+        var emitMcpHeaders = string.Equals(first, "mcp-headers", StringComparison.OrdinalIgnoreCase);
+        var documents = string.Equals(first, "documents", StringComparison.OrdinalIgnoreCase);
+        var documentsUpload = false;
+        var documentsDownload = false;
+
         var index = configure || emitMcpHeaders ? 1 : 0;
+        if (documents)
+        {
+            var subcommand = args.Length > 1 ? args[1] : null;
+            if (string.Equals(subcommand, "upload", StringComparison.OrdinalIgnoreCase))
+            {
+                documentsUpload = true;
+            }
+            else if (string.Equals(subcommand, "download", StringComparison.OrdinalIgnoreCase))
+            {
+                documentsDownload = true;
+            }
+            else
+            {
+                throw new CliUsageException("documents requires a subcommand: 'upload' or 'download'.");
+            }
+            index = 2;
+        }
+
         var showHelp = false;
         string? apiUrl = null;
         string? accountId = null;
         string? containerId = null;
+        string? outputPath = null;
         var parallelism = 4;
         var timeout = TimeSpan.FromMinutes(30);
         var wait = true;
@@ -47,6 +74,9 @@ internal sealed record CliOptions(
                     break;
                 case "--container":
                     containerId = ReadValue(args, ref index, argument);
+                    break;
+                case "--out":
+                    outputPath = ReadValue(args, ref index, argument);
                     break;
                 case "--parallel":
                     if (!int.TryParse(ReadValue(args, ref index, argument), out parallelism) ||
@@ -93,9 +123,24 @@ internal sealed record CliOptions(
             throw new CliUsageException("--publish cannot be combined with --no-wait.");
         }
 
+        var isDocumentCommand = documentsUpload || documentsDownload;
+        if (isDocumentCommand && (containerId is not null || publish))
+        {
+            throw new CliUsageException("--container and --publish are not valid for document commands.");
+        }
+        if (outputPath is not null && !documentsDownload)
+        {
+            throw new CliUsageException("--out is only valid for 'documents download'.");
+        }
+        if (documentsDownload && recursive)
+        {
+            throw new CliUsageException("--recursive is not valid for 'documents download'.");
+        }
+
         return new CliOptions(
             configure, emitMcpHeaders, showHelp, apiUrl, accountId, containerId,
-            parallelism, timeout, wait, publish, recursive, inputs);
+            parallelism, timeout, wait, publish, recursive,
+            documentsUpload, documentsDownload, outputPath, inputs);
     }
 
     private static string ReadValue(string[] args, ref int index, string option)
