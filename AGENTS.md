@@ -7,9 +7,10 @@ This project packages the LumiCodex production MCP endpoints and the
 
 - `.codex-plugin/plugin.json` is the Codex plugin manifest.
 - `.claude-plugin/plugin.json` is the Claude Code plugin manifest.
-- `.mcp.json` registers the scoped MCP servers (`lumicodex-photos`,
-  `lumicodex-signatures`, `lumicodex-documents`) under
-  `https://api.lumicodex.com/mcp/<scope>`.
+- `.mcp.json` registers the OAuth-enabled, non-required Codex MCP servers
+  (`lumicodex-photos`, `lumicodex-signatures`, `lumicodex-documents`).
+- `.mcp.claude.json` registers the same OAuth-enabled servers using Claude
+  Code's MCP configuration shape.
 - `skills/lumicodex-album-upload/SKILL.md` describes the album upload workflow.
 - `scripts/install-uploader.*` downloads release assets and runs uploader configuration.
 - `scripts/publish-uploader.sh` builds release assets from

@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "lumicodex-photos": {
+      "type": "http",
+      "url": "https://api.lumicodex.com/mcp/photos"
+    },
+    "lumicodex-signatures": {
+      "type": "http",
+      "url": "https://api.lumicodex.com/mcp/signatures"
+    },
+    "lumicodex-documents": {
+      "type": "http",
+      "url": "https://api.lumicodex.com/mcp/documents"
+    }
+  }
+}

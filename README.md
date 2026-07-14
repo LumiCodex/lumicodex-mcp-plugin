@@ -1,8 +1,8 @@
 # LumiCodex MCP Plugin
 
 This plugin connects OpenAI Codex and Anthropic Claude Code to the LumiCodex
-production MCP endpoints. Tools are split by domain so you can mount only what
-you need — one endpoint or several side by side:
+production MCP endpoints. Tools are split by domain so you can mount the
+endpoints you need, from one endpoint to all three:
 
 ```text
 https://api.lumicodex.com/mcp/photos       # album / image management
@@ -10,7 +10,7 @@ https://api.lumicodex.com/mcp/signatures   # e-signature envelopes
 https://api.lumicodex.com/mcp/documents    # document processing
 ```
 
-The bundled `.mcp.json` registers all three as independent servers
+The bundled MCP configuration registers all three as independent servers
 (`lumicodex-photos`, `lumicodex-signatures`, `lumicodex-documents`). Remove any
 you do not need so agents only see the relevant tools.
 
@@ -24,8 +24,8 @@ plugin repository can build release assets after it is published.
 
 ## What Users Need
 
-- A LumiCodex account id.
-- A LumiCodex API key.
+- A LumiCodex account for MCP browser authentication.
+- An account id and API key only when installing the local uploader.
 - `curl`, `tar`, and `unzip` on macOS/Linux, or PowerShell on Windows.
 - Linux only: `secret-tool` from libsecret if you want the uploader to store
   the API key in the OS credential store.
@@ -66,16 +66,23 @@ That validates the API key and stores it in the OS credential store.
 
 ## MCP Authentication
 
-The plugin `.mcp.json` uses the production HTTP MCP servers with the `x-api-key`
-header. All scoped endpoints share the same API key.
+The production HTTP MCP servers use OAuth 2.1 authorization-code flow with PKCE.
+No `LUMICODEX_API_KEY` export is required. After installing the plugin,
+authorize the scopes you want and approve each connection in the browser.
 
-Claude Code can use `headersHelper` to read the API key from either
-`LUMICODEX_API_KEY` or the credential saved by `lumicodex-upload configure`.
+For Codex, authenticate each scope when you need it:
 
-Codex-compatible clients can use the `headers` entry with
-`LUMICODEX_API_KEY`. If your Codex environment does not expand environment
-variables in MCP headers, set the API key in the MCP configuration supported by
-that client.
+```bash
+codex mcp login lumicodex-photos
+```
+
+The Codex entries are marked non-required, so a missing login or LumiCodex
+endpoint outage does not abort Codex startup. Claude Code users
+can run `/mcp`, select a LumiCodex server, and complete the browser login.
+
+API-key authentication remains supported by the server for automation and the
+uploader. To use it for MCP instead of OAuth, add an `x-api-key` header through
+the client's private user configuration; do not commit the key to this plugin.
 
 ## Local Claude Code Test
 

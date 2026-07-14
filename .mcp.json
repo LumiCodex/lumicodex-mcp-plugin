@@ -3,29 +3,23 @@
     "lumicodex-photos": {
       "type": "http",
       "url": "https://api.lumicodex.com/mcp/photos",
-      "headers": {
-        "x-api-key": "${LUMICODEX_API_KEY}"
-      },
-      "headersHelper": "${CLAUDE_PLUGIN_ROOT}/scripts/lumicodex-mcp-headers.sh",
-      "timeout": 600000
+      "oauth_resource": "https://api.lumicodex.com/mcp/photos",
+      "required": false,
+      "tool_timeout_sec": 660
     },
     "lumicodex-signatures": {
       "type": "http",
       "url": "https://api.lumicodex.com/mcp/signatures",
-      "headers": {
-        "x-api-key": "${LUMICODEX_API_KEY}"
-      },
-      "headersHelper": "${CLAUDE_PLUGIN_ROOT}/scripts/lumicodex-mcp-headers.sh",
-      "timeout": 600000
+      "oauth_resource": "https://api.lumicodex.com/mcp/signatures",
+      "required": false,
+      "tool_timeout_sec": 660
     },
     "lumicodex-documents": {
       "type": "http",
       "url": "https://api.lumicodex.com/mcp/documents",
-      "headers": {
-        "x-api-key": "${LUMICODEX_API_KEY}"
-      },
-      "headersHelper": "${CLAUDE_PLUGIN_ROOT}/scripts/lumicodex-mcp-headers.sh",
-      "timeout": 600000
+      "oauth_resource": "https://api.lumicodex.com/mcp/documents",
+      "required": false,
+      "tool_timeout_sec": 660
     }
   }
 }

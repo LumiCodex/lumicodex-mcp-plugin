@@ -36,9 +36,9 @@ The GitHub Actions workflow `.github/workflows/release-uploader.yml` creates:
 - `lumicodex-upload-win-x64.zip`
 - `lumicodex-upload-win-arm64.zip`
 
-Publish a GitHub release from a tag to attach those files automatically. Use
-the manual workflow dispatch to test asset generation before creating a public
-release.
+Publish a GitHub release from a tag, and GitHub Actions attaches those files.
+Use the manual workflow dispatch to test asset generation before creating a
+public release.
 
 ## Smoke Test
 
@@ -57,4 +57,11 @@ claude --plugin-dir .
 ```
 
 Run `/mcp` and confirm the scoped LumiCodex servers you kept (e.g.
-`lumicodex-photos`) are connected.
+`lumicodex-photos`) advertise OAuth, complete the browser login, and connect.
+
+For Codex, confirm an unauthenticated plugin does not prevent a session from
+starting, then authorize a scope and reconnect it:
+
+```bash
+codex mcp login lumicodex-photos
+```
