@@ -33,6 +33,27 @@ internal sealed record IngestStatusRequest(
 internal sealed record IngestErrorRequest(
     [property: JsonPropertyName("errorMessage")] string ErrorMessage);
 
+internal sealed record AccountSummary(
+    [property: JsonPropertyName("accountId")] string? AccountId,
+    [property: JsonPropertyName("uniqueName")] string? Name);
+
+internal sealed record AlbumSummary(
+    [property: JsonPropertyName("id")] string? Id,
+    [property: JsonPropertyName("name")] string? Name,
+    [property: JsonPropertyName("access")] int? Access,
+    [property: JsonPropertyName("itemCount")] int? ItemCount = null);
+
+internal sealed record CreateAlbumRequest(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("access")] int Access);
+
+internal sealed record UltraEncodeResult(
+    [property: JsonPropertyName("input")] string Input,
+    [property: JsonPropertyName("path")] string Path,
+    [property: JsonPropertyName("codec")] string Codec,
+    [property: JsonPropertyName("bitDepth")] int BitDepth,
+    [property: JsonPropertyName("colorProfile")] string ColorProfile);
+
 // The documents ephemeral/generate-upload-urls endpoint reuses the "urls" field to carry the
 // file names to prepare upload slots for; it returns one presigned PUT URL and ephemeral id per
 // entry, in request order.
@@ -67,6 +88,11 @@ internal sealed record DocumentDownloadResult(
 [JsonSerializable(typeof(IngestStatusRequest))]
 [JsonSerializable(typeof(List<IngestStatus>))]
 [JsonSerializable(typeof(IngestErrorRequest))]
+[JsonSerializable(typeof(AccountSummary))]
+[JsonSerializable(typeof(AlbumSummary))]
+[JsonSerializable(typeof(List<AlbumSummary>))]
+[JsonSerializable(typeof(CreateAlbumRequest))]
+[JsonSerializable(typeof(List<UltraEncodeResult>))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
 [JsonSerializable(typeof(DocumentUploadUrlsRequest))]
 [JsonSerializable(typeof(DocumentUploadUrlsResponse))]

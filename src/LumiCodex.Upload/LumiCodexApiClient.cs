@@ -18,8 +18,17 @@ internal sealed class LumiCodexApiClient : IDisposable
     private readonly HttpClient uploadClient;
 
     internal LumiCodexApiClient(Uri apiUrl, string apiKey)
+        : this(apiUrl, apiKey, new HttpClientHandler(), new HttpClientHandler())
     {
-        apiClient = new HttpClient
+    }
+
+    internal LumiCodexApiClient(
+        Uri apiUrl,
+        string apiKey,
+        HttpMessageHandler apiHandler,
+        HttpMessageHandler uploadHandler)
+    {
+        apiClient = new HttpClient(apiHandler)
         {
             BaseAddress = apiUrl,
             Timeout = TimeSpan.FromMinutes(2)
@@ -29,7 +38,7 @@ internal sealed class LumiCodexApiClient : IDisposable
             apiClient.DefaultRequestHeaders.Add("x-api-key", apiKey);
         }
 
-        uploadClient = new HttpClient
+        uploadClient = new HttpClient(uploadHandler)
         {
             Timeout = Timeout.InfiniteTimeSpan
         };
@@ -40,6 +49,67 @@ internal sealed class LumiCodexApiClient : IDisposable
         using var response = await apiClient.GetAsync(
             "health/hello2", HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         await EnsureSuccessAsync(response, "API-key validation", cancellationToken);
+    }
+
+    internal async Task<AccountSummary> GetAccountAsync(
+        string accountId,
+        CancellationToken cancellationToken)
+    {
+        using var response = await apiClient.GetAsync(
+            $"accounts/{Uri.EscapeDataString(accountId)}",
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
+        await EnsureSuccessAsync(response, "reading account information", cancellationToken);
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        return await JsonSerializer.DeserializeAsync(
+            stream,
+            UploadJsonContext.Default.AccountSummary,
+            cancellationToken) ?? throw new InvalidOperationException("The API returned no account information.");
+    }
+
+    internal async Task<List<AlbumSummary>> ListAlbumsAsync(
+        string accountId,
+        CancellationToken cancellationToken)
+    {
+        using var response = await apiClient.GetAsync(
+            $"accounts/{Uri.EscapeDataString(accountId)}/containers",
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
+        await EnsureSuccessAsync(response, "listing albums", cancellationToken);
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        return await JsonSerializer.DeserializeAsync(
+            stream,
+            UploadJsonContext.Default.ListAlbumSummary,
+            cancellationToken) ?? [];
+    }
+
+    internal async Task<AlbumSummary> CreateAlbumAsync(
+        string accountId,
+        string name,
+        bool isPublic,
+        CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"accounts/{Uri.EscapeDataString(accountId)}/containers")
+        {
+            Content = JsonContent.Create(
+                new CreateAlbumRequest(name, isPublic ? 1 : 0),
+                UploadJsonContext.Default.CreateAlbumRequest)
+        };
+        using var response = await apiClient.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
+        await EnsureSuccessAsync(response, "creating an album", cancellationToken);
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        return await JsonSerializer.DeserializeAsync(
+            stream,
+            UploadJsonContext.Default.AlbumSummary,
+            cancellationToken) ?? throw new InvalidOperationException("The API returned no album information.");
     }
 
     internal async Task<List<ImageUploadPreparation>> CreateIngestsAsync(

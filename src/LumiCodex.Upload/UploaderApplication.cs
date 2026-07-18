@@ -26,6 +26,14 @@ internal static class UploaderApplication
                 PrintHelp();
                 return 0;
             }
+            if (options.Command == UploaderCommand.EncodeUltra)
+            {
+                var results = await UltraEncoder.EncodeAsync(options, cancellationToken);
+                Console.WriteLine(JsonSerializer.Serialize(
+                    results,
+                    UploadJsonContext.Default.ListUltraEncodeResult));
+                return 0;
+            }
 
             var savedConfiguration = await ConfigurationStore.LoadAsync(cancellationToken);
             var apiUrl = ConfigurationStore.ResolveApiUrl(options.ApiUrl, savedConfiguration);
@@ -60,6 +68,17 @@ internal static class UploaderApplication
             if (options.DocumentsDownload)
             {
                 return await DownloadDocumentsAsync(options, cancellationToken);
+            }
+            if (options.Command is UploaderCommand.WhoAmI or
+                UploaderCommand.AlbumsList or
+                UploaderCommand.AlbumsCreate)
+            {
+                return await RunAccountCommandAsync(
+                    options,
+                    savedConfiguration,
+                    apiUrl,
+                    credentialStore,
+                    cancellationToken);
             }
 
             return await UploadAsync(
@@ -359,6 +378,51 @@ internal static class UploaderApplication
         }
 
         return apiKey.Trim();
+    }
+
+    private static async Task<int> RunAccountCommandAsync(
+        CliOptions options,
+        UploadConfiguration savedConfiguration,
+        Uri apiUrl,
+        ICredentialStore credentialStore,
+        CancellationToken cancellationToken)
+    {
+        var accountId = ConfigurationStore.ResolveAccountId(options.AccountId, savedConfiguration);
+        if (string.IsNullOrWhiteSpace(accountId))
+        {
+            throw new CliUsageException(
+                "An account is required. Use --account, LUMICODEX_ACCOUNT_ID, or configure a default.");
+        }
+
+        var apiKey = await ResolveApiKeyAsync(apiUrl, credentialStore, cancellationToken);
+        using var api = new LumiCodexApiClient(apiUrl, apiKey);
+        switch (options.Command)
+        {
+            case UploaderCommand.WhoAmI:
+            {
+                var account = await api.GetAccountAsync(accountId, cancellationToken);
+                Console.WriteLine(JsonSerializer.Serialize(account, UploadJsonContext.Default.AccountSummary));
+                return 0;
+            }
+            case UploaderCommand.AlbumsList:
+            {
+                var albums = await api.ListAlbumsAsync(accountId, cancellationToken);
+                Console.WriteLine(JsonSerializer.Serialize(albums, UploadJsonContext.Default.ListAlbumSummary));
+                return 0;
+            }
+            case UploaderCommand.AlbumsCreate:
+            {
+                var album = await api.CreateAlbumAsync(
+                    accountId,
+                    options.Name!,
+                    options.Access == "public",
+                    cancellationToken);
+                Console.WriteLine(JsonSerializer.Serialize(album, UploadJsonContext.Default.AlbumSummary));
+                return 0;
+            }
+            default:
+                throw new InvalidOperationException($"Unsupported account command: {options.Command}");
+        }
     }
 
     private static List<DocumentUploadWorkItem> CorrelateDocuments(
@@ -740,6 +804,14 @@ internal static class UploaderApplication
             MCP headers:
               lumicodex-upload mcp-headers [--api-url URL]
 
+            Verify an account and manage albums (prints JSON to stdout):
+              lumicodex-upload whoami [--account ID]
+              lumicodex-upload albums list [--account ID]
+              lumicodex-upload albums create --name NAME --access public|private [--account ID]
+
+            Encode Lightroom's 16-bit, color-managed render for an Ultra upload:
+              lumicodex-upload encode ultra --codec avif|jxl --out DIR [--vips PATH] [--cjxl PATH] INPUT...
+
             Inputs:
               For image upload and 'documents upload', each input may be a file or a folder.
               Folders are scanned only at their top level unless --recursive is specified
@@ -758,6 +830,13 @@ internal static class UploaderApplication
               --no-wait              Return after upload without waiting for processing.
               --publish              Publish after every image processes successfully.
               --recursive            Include files in nested input folders.
+              --name NAME            New album name ('albums create' only).
+              --access VALUE         New album access: public or private.
+              --codec VALUE          Ultra codec: avif or jxl.
+              --vips PATH            libvips executable. Defaults to LUMICODEX_VIPS_PATH,
+                                     then vips on PATH.
+              --cjxl PATH            JPEG XL encoder. Defaults to LUMICODEX_CJXL_PATH,
+                                     then cjxl on PATH (JXL only).
               -h, --help             Show this help.
 
             Authentication:

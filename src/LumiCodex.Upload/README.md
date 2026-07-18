@@ -72,6 +72,44 @@ path order, and a file supplied more than once is uploaded only once.
 Large selections are prepared in batches of 500 images. Processing status is
 read from the authoritative ingest/item records before optional publication.
 
+## Account and album commands
+
+The Lightroom export plugin uses the uploader for account verification and
+album management. These commands print JSON to stdout and errors to stderr:
+
+```bash
+lumicodex-upload whoami --account ACCOUNT_ID
+lumicodex-upload albums list --account ACCOUNT_ID
+lumicodex-upload albums create \
+  --account ACCOUNT_ID \
+  --name "Private selects" \
+  --access private
+```
+
+Album access must be `public` or `private`. The same API URL, environment
+variables, saved account, and credential lookup rules apply as for uploads.
+
+## Lightroom Ultra encoding
+
+`encode ultra` color-converts a color-managed Lightroom render to Display P3,
+then writes an AVIF or JPEG XL master. It prints a JSON array describing the
+output files:
+
+```bash
+lumicodex-upload encode ultra \
+  --codec avif \
+  --out ./encoded \
+  photo.tif
+```
+
+Ultra encoding requires a libvips build with `icc_transform` and AVIF support.
+JPEG XL also requires `cjxl` with `--override_bitdepth` support. The tools are
+resolved from `--vips` / `--cjxl`, `LUMICODEX_VIPS_PATH` /
+`LUMICODEX_CJXL_PATH`, or `PATH`. AVIF uses 10-bit 4:4:4 at quality 80. JPEG XL
+uses 10-bit at distance 0.7. Both outputs embed the bundled Display P3 profile;
+the input must have an embedded ICC profile (Lightroom's ProPhoto 16-bit TIFF
+export is the portable fallback).
+
 ## Documents
 
 The `documents` subcommands move files for the signatures and documents MCP
