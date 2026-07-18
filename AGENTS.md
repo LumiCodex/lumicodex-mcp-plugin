@@ -21,6 +21,20 @@ This project packages the LumiCodex production MCP endpoints and the
   folder is published as its own GitHub repository.
 - `src/LumiCodex.Upload` is the vendored standalone uploader source.
 
+## Uploader Source Contract
+
+- `LumiCodex/LumiCodexSolution/LumiCodex.Upload` is canonical;
+  `src/LumiCodex.Upload` must be an exact vendored source copy for releases.
+- After backend uploader changes, run `scripts/sync-uploader-source.sh`, review
+  the diff, and run uploader tests before packaging. Do not patch only the
+  vendored copy.
+- The public CLI includes `whoami`, `albums list`, `albums create`, normal
+  uploads, document transfer, and `encode ultra`. Keep the packaged skill and
+  release assets in sync with `--help` when commands change.
+- Ultra conversion depends on libvips; JPEG XL also needs `cjxl` with
+  `--override_bitdepth` support. Native codec tools are external dependencies,
+  not silently bundled release assets.
+
 ## Release Asset Names
 
 - `lumicodex-upload-dotnet10.tar.gz` and `lumicodex-upload-dotnet10.zip` for the

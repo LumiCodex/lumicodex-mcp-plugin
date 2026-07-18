@@ -15,15 +15,31 @@ Use this workflow when the user wants to create, find, update, publish, or uploa
 
 ## Workflow
 
-1. Use the configured `lumicodex` MCP server to list or create the target album/container.
-2. Capture the returned container id exactly. Do not substitute the album name for the id.
-3. Verify the uploader is available:
+1. Verify the uploader is available:
 
    ```bash
    lumicodex-upload --help
    ```
 
    If it is not on `PATH`, try `$HOME/.lumicodex/bin/lumicodex-upload`.
+
+2. Verify the account and use the uploader's JSON output to list or create the
+   target album:
+
+   ```bash
+   lumicodex-upload whoami --account ACCOUNT_ID
+   lumicodex-upload albums list --account ACCOUNT_ID
+   lumicodex-upload albums create --account ACCOUNT_ID \
+     --name "ALBUM_NAME" --access private
+   ```
+
+   Omit `--account` when the configured key resolves the account unambiguously.
+   Choose `public` only when the user asks for a public album. The configured
+   `lumicodex` MCP server remains useful for container operations beyond these
+   commands.
+
+3. Capture the returned container id exactly. Do not substitute the album name
+   for the id.
 
 4. Upload images with the returned container id:
 
@@ -40,3 +56,18 @@ Use this workflow when the user wants to create, find, update, publish, or uploa
 - Use `--recursive` for folders unless the user asks to upload only the top level.
 - Use `--publish` when the user asks for a public/published album. Omit it when they ask to upload without publishing.
 - If `lumicodex-upload` reports that no API key is available, tell the user to run the plugin installer or `lumicodex-upload configure`.
+
+## Lightroom Ultra Encoding
+
+Use `encode ultra` only for color-managed, 16-bit Lightroom renders:
+
+```bash
+lumicodex-upload encode ultra --codec avif --out ENCODED_DIR INPUT.tif
+lumicodex-upload encode ultra --codec jxl --out ENCODED_DIR INPUT.tif
+```
+
+Ultra conversion requires libvips with `icc_transform`; AVIF additionally needs
+AVIF support. JPEG XL requires `cjxl` with `--override_bitdepth` support. Tools
+resolve from `--vips` / `--cjxl`, `LUMICODEX_VIPS_PATH` /
+`LUMICODEX_CJXL_PATH`, or `PATH`. Keep the API key in the environment and do not
+add network behavior to Lightroom Lua code.
