@@ -2,7 +2,7 @@
   "name": "lumicodex-mcp-plugin",
   "displayName": "LumiCodex MCP",
   "version": "0.1.0",
-  "description": "LumiCodex MCP tools and image uploader integration for Claude Code.",
+  "description": "LumiCodex MCP tools for albums, collections, and documents plus image uploader integration for Claude Code.",
   "author": {
     "name": "LumiCodex"
   },

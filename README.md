@@ -5,7 +5,7 @@ production MCP endpoints. Tools are split by domain so you can mount the
 endpoints you need, from one endpoint to all three:
 
 ```text
-https://api.lumicodex.com/mcp/photos       # album / image management
+https://api.lumicodex.com/mcp/photos       # album, collection, and image management
 https://api.lumicodex.com/mcp/signatures   # e-signature envelopes
 https://api.lumicodex.com/mcp/documents    # document processing
 ```
@@ -107,6 +107,18 @@ instructs the agent to:
 
 The uploader supports `.jpg`, `.jpeg`, `.jfif`, `.png`, `.webp`, `.jxl`,
 `.tif`, `.tiff`, `.jp2`, `.avif`, and `.bmp`.
+
+## Collection Workflow
+
+The photos MCP server also exposes `groups_*` tools for photographer-facing
+collections. Agents can list/create collections, update their metadata and
+access, add or remove albums, publish collection JSON, delete while keeping or
+deleting member albums, and create/list/revoke metered collection share links.
+
+Adding an album or changing collection access physically moves media and
+changes private CDN paths. The tool descriptions call out that consequence;
+republish affected albums and the collection before distributing embeds or
+links.
 
 ## Document Workflow
 

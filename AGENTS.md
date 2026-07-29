@@ -2,6 +2,8 @@
 
 This project packages the LumiCodex production MCP endpoints and the
 `lumicodex-upload` image uploader for OpenAI Codex and Anthropic Claude Code.
+The photos endpoint includes album/image `containers_*` tools and collection
+`groups_*` tools; user-facing descriptions call backend groups collections.
 
 ## Key Files
 
@@ -20,6 +22,17 @@ This project packages the LumiCodex production MCP endpoints and the
 - `.github/workflows/release-uploader.yml` builds release artifacts after this
   folder is published as its own GitHub repository.
 - `src/LumiCodex.Upload` is the vendored standalone uploader source.
+
+## Collection Tools
+
+- Collection management and collection share tools are implemented by the
+  backend `GroupTools.cs` and exposed through the existing `mcp/photos`
+  server; this plugin does not vendor their implementation.
+- Update plugin descriptions, prompts, and README when the `groups_*` surface
+  materially changes. Do not run the uploader sync script unless
+  `LumiCodex.Upload` source or bundled assets changed.
+- Read the mirrored workspace `lc-collections` skill for the full backend,
+  CoreUI, admin, viewer, authorizer, and rollout contract.
 
 ## Uploader Source Contract
 
