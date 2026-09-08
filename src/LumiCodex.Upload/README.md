@@ -1,6 +1,6 @@
 # LumiCodex Upload
 
-Cross-platform image uploader intended for direct use and narrow command
+Cross-platform photo and video uploader intended for direct use and narrow command
 allowlisting by coding agents.
 
 ## Configuration
@@ -36,7 +36,7 @@ reads `LUMICODEX_API_KEY` first, then the operating-system credential saved by
 
 ## Upload
 
-Inputs may be individual image files, folders, or a mixture of both. Folders
+Inputs may be individual photo/video files, folders, or a mixture of both. Folders
 are scanned at their top level by default.
 
 ```bash
@@ -65,7 +65,15 @@ lumicodex-upload \
   ./photos
 ```
 
-Supported images are selected by extension. Unsupported files are skipped and
+Video uploads accept `.mp4`, `.mov`, `.m4v`, and `.webm`, up to 5 GB
+(5,000,000,000 bytes) through resumable TUS uploads directly to Bunny. The account
+must be enabled for video ingestion by the API. Premium libraries retain originals
+in Bunny; free libraries discard them after encoding. Photos still use presigned
+PUT uploads and the LumiCodex archive. Bunny encoding can take longer than photo processing. A batch containing video waits
+up to 50 hours by default; an explicit `--timeout-minutes` overrides that.
+`encode ultra` remains a separate photo conversion command.
+
+Supported media are selected by extension. Unsupported files are skipped and
 reported. Files discovered inside each folder are processed in deterministic
 path order, and a file supplied more than once is uploaded only once.
 

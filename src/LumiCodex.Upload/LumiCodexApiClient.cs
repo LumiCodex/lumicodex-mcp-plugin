@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace LumiCodex.Upload;
 
-internal sealed class LumiCodexApiClient : IDisposable
+internal sealed partial class LumiCodexApiClient : IDisposable
 {
     private const int MaxUploadAttempts = 4;
     private static readonly TimeSpan UploadRetryBaseDelay = TimeSpan.FromSeconds(2);
@@ -18,7 +18,7 @@ internal sealed class LumiCodexApiClient : IDisposable
     private readonly HttpClient uploadClient;
 
     internal LumiCodexApiClient(Uri apiUrl, string apiKey)
-        : this(apiUrl, apiKey, new HttpClientHandler(), new HttpClientHandler())
+        : this(apiUrl, apiKey, new HttpClientHandler(), new HttpClientHandler { AllowAutoRedirect = false })
     {
     }
 
@@ -116,13 +116,13 @@ internal sealed class LumiCodexApiClient : IDisposable
         string accountId,
         string containerId,
         IReadOnlyList<string> fileNames,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, IReadOnlyList<long>? fileSizes = null)
     {
         using var request = new HttpRequestMessage(
             HttpMethod.Post, ContainerPath(accountId, containerId, "ingests"))
         {
             Content = JsonContent.Create(
-                new CreateIngestsRequest(fileNames),
+                new CreateIngestsRequest(fileNames, fileSizes),
                 UploadJsonContext.Default.CreateIngestsRequest)
         };
         using var response = await apiClient.SendAsync(

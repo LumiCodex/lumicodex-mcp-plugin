@@ -30,7 +30,8 @@ internal sealed record CliOptions(
     string? Codec,
     string? VipsPath,
     string? CjxlPath,
-    IReadOnlyList<string> Inputs)
+    IReadOnlyList<string> Inputs,
+    bool HasExplicitProcessingTimeout = false)
 {
     internal bool Configure => Command == UploaderCommand.Configure;
     internal bool EmitMcpHeaders => Command == UploaderCommand.McpHeaders;
@@ -52,6 +53,7 @@ internal sealed record CliOptions(
         string? cjxlPath = null;
         var parallelism = 4;
         var timeout = TimeSpan.FromMinutes(30);
+        var explicitTimeout = false;
         var wait = true;
         var publish = false;
         var recursive = false;
@@ -102,11 +104,12 @@ internal sealed record CliOptions(
                     break;
                 case "--timeout-minutes":
                     if (!int.TryParse(ReadValue(args, ref index, argument), out var minutes) ||
-                        minutes is < 1 or > 1440)
+                        minutes is < 1 or > 3000)
                     {
-                        throw new CliUsageException("--timeout-minutes must be between 1 and 1440.");
+                        throw new CliUsageException("--timeout-minutes must be between 1 and 3000.");
                     }
                     timeout = TimeSpan.FromMinutes(minutes);
+                    explicitTimeout = true;
                     break;
                 case "--no-wait":
                     wait = false;
@@ -139,7 +142,7 @@ internal sealed record CliOptions(
         return new CliOptions(
             command, showHelp, apiUrl, accountId, containerId,
             parallelism, timeout, wait, publish, recursive, outputPath,
-            name, access, codec, vipsPath, cjxlPath, inputs);
+            name, access, codec, vipsPath, cjxlPath, inputs, explicitTimeout);
     }
 
     private static (UploaderCommand Command, int Index) ParseCommand(string[] args)

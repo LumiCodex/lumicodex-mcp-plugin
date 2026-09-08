@@ -7,7 +7,8 @@ internal sealed record UploadConfiguration(
     [property: JsonPropertyName("accountId")] string? AccountId);
 
 internal sealed record CreateIngestsRequest(
-    [property: JsonPropertyName("files")] IReadOnlyList<string> Files);
+    [property: JsonPropertyName("files")] IReadOnlyList<string> Files,
+    [property: JsonPropertyName("fileSizes")] IReadOnlyList<long>? FileSizes = null);
 
 internal sealed record ImageUploadPreparation(
     [property: JsonPropertyName("clientFileId")] int ClientFileId,
@@ -18,7 +19,10 @@ internal sealed record ImageUploadPreparation(
     [property: JsonPropertyName("type")] string? Type,
     [property: JsonPropertyName("subType")] string? SubType,
     [property: JsonPropertyName("message")] string? Message,
-    [property: JsonPropertyName("stackTrace")] string? StackTrace);
+    [property: JsonPropertyName("stackTrace")] string? StackTrace,
+    [property: JsonPropertyName("bunnyUpload")] BunnyUploadData? BunnyUpload = null);
+
+internal sealed record BunnyUploadData(long LibraryId, string VideoId, string Signature, long Expires);
 
 internal sealed record IngestStatus(
     [property: JsonPropertyName("ingestId")] string IngestId,

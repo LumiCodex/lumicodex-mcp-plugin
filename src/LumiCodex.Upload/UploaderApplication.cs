@@ -9,10 +9,11 @@ internal static class UploaderApplication
     private const int MaxImageUploadStatusesPerRequest = 1000;
     private const int MaxDocumentUploadsPerRequest = 100;
 
-    private static readonly HashSet<string> SupportedImageExtensions = new(
+    private static readonly HashSet<string> SupportedMediaExtensions = new(
         [
             ".jpg", ".jpeg", ".jfif", ".png", ".webp", ".jxl",
-            ".tif", ".tiff", ".jp2", ".avif", ".bmp"
+            ".tif", ".tiff", ".jp2", ".avif", ".bmp",
+            ".mp4", ".mov", ".m4v", ".webm"
         ],
         StringComparer.OrdinalIgnoreCase);
 
@@ -473,18 +474,22 @@ internal static class UploaderApplication
         }
         if (options.Inputs.Count == 0)
         {
-            throw new CliUsageException("At least one image file or folder is required.");
+            throw new CliUsageException("At least one photo, video or folder is required.");
         }
 
-        var (files, skippedFiles) = ResolveInputFiles(options.Inputs, options.Recursive, SupportedImageExtensions);
+        var (files, skippedFiles) = ResolveInputFiles(options.Inputs, options.Recursive, SupportedMediaExtensions);
         if (skippedFiles.Count > 0)
         {
             PrintSkippedFiles(skippedFiles);
         }
         if (files.Count == 0)
         {
-            throw new CliUsageException("No supported image files were found.");
+            throw new CliUsageException("No supported media files were found.");
         }
+
+        foreach (var file in files.Where(IsVideo))
+            if (new FileInfo(file).Length is <= 0 or > 5_000_000_000L)
+                throw new CliUsageException($"Video files must be between 1 byte and 5 GB: {file}");
 
         var apiKey = await ResolveApiKeyAsync(apiUrl, credentialStore, cancellationToken);
         using var api = new LumiCodexApiClient(apiUrl, apiKey);
@@ -497,7 +502,7 @@ internal static class UploaderApplication
                 options.ContainerId,
                 batchFiles.Select(file => Path.GetFileName(file)
                     ?? throw new CliUsageException($"File has no name: {file}")).ToList(),
-                cancellationToken);
+                cancellationToken, batchFiles.Select(file => new FileInfo(file).Length).ToList());
             work.AddRange(Correlate(batchFiles, descriptors));
         }
 
@@ -515,7 +520,9 @@ internal static class UploaderApplication
                 try
                 {
                     Console.WriteLine($"Uploading {Path.GetFileName(item.FilePath)}");
-                    await api.UploadFileAsync(item.FilePath, item.UploadUrl, token);
+                    if (item.Descriptor.BunnyUpload is { } bunny)
+                        await api.UploadBunnyAsync(item.FilePath, item.UploadUrl, bunny, token);
+                    else await api.UploadFileAsync(item.FilePath, item.UploadUrl, token);
                     Console.WriteLine($"Uploaded  {Path.GetFileName(item.FilePath)}");
                 }
                 catch (Exception exception) when (exception is not OperationCanceledException)
@@ -553,7 +560,8 @@ internal static class UploaderApplication
                 accountId,
                 options.ContainerId,
                 work.Select(item => item.Descriptor.IngestId!).ToHashSet(StringComparer.Ordinal),
-                options.ProcessingTimeout,
+                !options.HasExplicitProcessingTimeout && files.Any(IsVideo)
+                    ? TimeSpan.FromHours(50) : options.ProcessingTimeout,
                 cancellationToken);
             if (processingErrors.Count > 0)
             {
@@ -572,7 +580,7 @@ internal static class UploaderApplication
             Console.WriteLine($"Published container {options.ContainerId}.");
         }
 
-        Console.WriteLine($"Completed {work.Count} image(s).");
+        Console.WriteLine($"Completed {work.Count} media item(s).");
         return 0;
     }
 
@@ -710,7 +718,7 @@ internal static class UploaderApplication
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
-        Console.WriteLine("Waiting for image processing.");
+        Console.WriteLine("Waiting for media processing.");
         var deadline = DateTimeOffset.UtcNow + timeout;
         while (DateTimeOffset.UtcNow < deadline)
         {
@@ -742,7 +750,7 @@ internal static class UploaderApplication
         }
 
         throw new TimeoutException(
-            $"Image processing did not complete within {timeout.TotalMinutes:0} minute(s).");
+            $"Media processing did not complete within {timeout.TotalMinutes:0} minute(s).");
     }
 
     private static string ReadSecret(string prompt)
@@ -778,13 +786,15 @@ internal static class UploaderApplication
         }
     }
 
+    internal static bool IsVideo(string file) => Path.GetExtension(file).ToLowerInvariant() is ".mp4" or ".mov" or ".m4v" or ".webm";
+
     private static void PrintHelp()
     {
         Console.WriteLine(
             """
             LumiCodex uploader
 
-            Upload images to an album:
+            Upload photos and videos to an album:
               lumicodex-upload --container ID [options] INPUT [INPUT...]
 
             Upload documents to ephemeral storage (for the signatures/documents MCP tools):
@@ -815,7 +825,7 @@ internal static class UploaderApplication
             Inputs:
               For image upload and 'documents upload', each input may be a file or a folder.
               Folders are scanned only at their top level unless --recursive is specified
-              (image upload keeps only supported image types; document upload takes any file).
+              (media upload keeps supported photo types and MP4/MOV/M4V/WebM videos; document upload takes any file).
 
             Options:
               --api-url URL          API URL. Defaults to LUMICODEX_API_URL,
@@ -826,7 +836,7 @@ internal static class UploaderApplication
               --out PATH             'documents download' destination. A directory, or a
                                      file path when downloading a single URL. Default: cwd.
               --parallel N           Concurrent transfers, from 1 to 32. Default: 4.
-              --timeout-minutes N    Image processing timeout. Default: 30.
+              --timeout-minutes N    Processing timeout. Default: 30 minutes; 3000 for video.
               --no-wait              Return after upload without waiting for processing.
               --publish              Publish after every image processes successfully.
               --recursive            Include files in nested input folders.
