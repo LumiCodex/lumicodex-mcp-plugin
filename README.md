@@ -115,6 +115,14 @@ collections. Agents can list/create collections, update their metadata and
 access, add or remove albums, publish collection JSON, delete while keeping or
 deleting member albums, and create/list/revoke metered collection share links.
 
+Use `groups_get` to read `orderingRevision`, then `groups_set_ordering` to sort
+albums by created date (`sortCriteria: 0`), album name (`1`), or manual order
+(`5`). Automatic modes accept `sortDescending`; manual mode accepts the complete
+`containerIds` sequence. Pass `expectedRevision` from the read (0 when absent).
+Saving preserves the draft manual sequence across automatic sorts and does not
+publish. Refresh after a conflict or lost response; publish separately to update
+embedded galleries.
+
 Adding an album or changing collection access physically moves media and
 changes private CDN paths. The tool descriptions call out that consequence;
 republish affected albums and the collection before distributing embeds or
